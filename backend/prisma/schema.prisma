@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  password        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  researchQueries ResearchQuery[]
+  reports         ResearchReport[]
+}
+
+model ResearchQuery {
+  content String @db.LongText
+  id          String   @id @default(uuid())
+  query       String
+  diseaseName String?
+  drugName    String?
+  createdAt   DateTime @default(now())
+
+  userId      String
+  user        User @relation(fields: [userId], references: [id])
+
+  reports     ResearchReport[]
+}
+
+model ResearchReport {
+  id                String   @id @default(uuid())
+  title             String
+  summary           String   @db.Text
+  literatureData    Json
+  clinicalTrialData Json
+  drugInfoData      Json
+  marketData        Json
+  aiInsights        String   @db.Text
+  pdfUrl            String?
+  createdAt         DateTime @default(now())
+
+  userId            String
+  user              User @relation(fields: [userId], references: [id])
+
+  researchQueryId   String
+  researchQuery     ResearchQuery @relation(fields: [researchQueryId], references: [id])
+}

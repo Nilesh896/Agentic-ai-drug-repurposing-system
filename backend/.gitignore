@@ -1,0 +1,20 @@
+# dependencies
+node_modules
+
+# next
+.next
+
+# production
+dist
+
+# env files
+.env
+
+# logs
+npm-debug.log*
+
+# prisma
+prisma/dev.db
+
+# OS files
+.DS_Store

@@ -1,5 +1,11 @@
 # Agentic AI Research Assistant for Drug Repurposing
 
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Gemini](https://img.shields.io/badge/Google_Gemini-4285F4?style=for-the-badge&logo=google&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+
 An advanced, AI-driven pharmaceutical intelligence system designed to accelerate drug repurposing research. By utilizing a custom multi-agent orchestration architecture, it automates the analysis of medical literature, clinical trial data, and pharmacological databases to identify novel therapeutic applications for existing drugs.
 
 ## 🚀 Project Overview
@@ -85,3 +91,31 @@ The system follows a modern client-server architecture:
 
 ---
 *Developed as a showcase of advanced AI integration and full-stack development capabilities.*
+
+## 📸 Application Screenshots
+
+### 🔐 Login Page
+
+![Login Page](docs/images/login.png)
+
+### 📊 Dashboard
+
+![Dashboard](docs/images/dashboard.png)
+
+### 📚 Research History
+
+![Research History](docs/images/history.png)
+
+### 📄 Generated Research Report
+
+![Generated Report](docs/images/generated-report.png)
+
+### 📝 AI Generated PDF Report
+
+![PDF Report](docs/images/pdf-report.png)
+
+## 📑 Sample Generated Report
+
+You can download a sample AI-generated research report below:
+
+[📥 Download Sample PDF Report](sample-reports/sample-ai-report.pdf)

@@ -102,9 +102,6 @@ The system follows a modern client-server architecture:
 
 ![Dashboard](docs/images/dashboard.png)
 
-### 📚 Research History
-
-![Research History](docs/images/history.png)
 
 ### 📄 Generated Research Report
 

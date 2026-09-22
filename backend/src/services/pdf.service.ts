@@ -5,7 +5,8 @@ import PDFDocument from "pdfkit";
 export const generateResearchPDF = async (
     reportId: string,
     query: string,
-    aiReport: string
+    aiReport: string,
+    reportData?: any
 ) => {
     return new Promise<string>((resolve, reject) => {
         try {
@@ -125,40 +126,45 @@ export const generateResearchPDF = async (
             doc.addPage();
 
             doc
-                .fontSize(26)
+                .fontSize(24)
                 .font("Helvetica-Bold")
                 .fillColor("#111111")
-                .text(
-                    "Table of Contents"
-                );
+                .text("Table of Contents", 60, 80);
+
+            doc.strokeColor("#2563EB").lineWidth(2).moveTo(60, 110).lineTo(doc.page.width - 60, 110).stroke();
 
             doc.moveDown(2);
+            doc.y = 130;
 
             const tocItems = [
+                "Research Question",
                 "Executive Summary",
-                "Disease Background",
+                "Evidence Overview",
+                "Literature Evidence",
+                "Clinical Trial Evidence",
                 "Drug Overview",
-                "Mechanism of Action",
-                "Literature Review",
-                "Clinical Insights",
-                "Safety Analysis",
-                "Market Potential",
-                "Challenges",
+                "Target Disease Overview",
+                "Repurposing Rationale",
+                "Safety & Contraindications",
+                "Repurposing Assessment",
+                "Limitations",
                 "Conclusion",
                 "References",
             ];
 
+            const tocPositions: { name: string; y: number }[] = [];
+
             tocItems.forEach((item, index) => {
+                doc.moveDown(0.65);
+                const currentY = doc.y;
                 doc
-                    .fontSize(14)
-                    .font("Helvetica")
-                    .fillColor("#333333")
-                    .text(
-                        `${index + 1}. ${item}`,
-                        {
-                            lineGap: 8,
-                        }
-                    );
+                    .fontSize(11)
+                    .font("Helvetica-Bold")
+                    .fillColor("#374151")
+                    .text(`${index + 1}. ${item}`, 60, currentY);
+
+                // Save Y position to write page number later
+                tocPositions.push({ name: item, y: currentY });
             });
 
             // =========================
@@ -176,11 +182,15 @@ export const generateResearchPDF = async (
             ) => {
                 return text
                     .replace(
+                        /\*\*(.*?)\*\*/g,
+                        "$1"
+                    )
+                    .replace(
                         /__(.*?)__/g,
                         "$1"
                     )
                     .replace(
-                        /\*\*(.*?)\*/g,
+                        /\*(.*?)\*/g,
                         "$1"
                     )
                     .replace(
@@ -192,9 +202,21 @@ export const generateResearchPDF = async (
                         "$1"
                     )
                     .replace(
+                        /\\/g,
+                        ""
+                    )
+                    .replace(
                         /#/g,
                         ""
                     );
+            };
+
+            const normalizeSectionName = (name: string) => {
+                return name
+                    .toLowerCase()
+                    .replace(/^\d+\.\s*/, "") // strip leading numbers
+                    .replace(/[:]/g, "") // strip colons
+                    .trim();
             };
 
             const renderTextWithBold = (
@@ -237,9 +259,11 @@ export const generateResearchPDF = async (
                     if (i % 2 === 1) {
                         doc
                             .font(
+                                options.boldFont ||
                                 "Helvetica-Bold"
                             )
                             .fillColor(
+                                options.boldColor ||
                                 "#111111"
                             )
                             .text(partText, {
@@ -271,250 +295,929 @@ export const generateResearchPDF = async (
                 }
             };
 
-            // =========================
-            // MAIN CONTENT
-            // =========================
+            const renderQuoteBox = (
+                doc: any,
+                quoteLines: string[]
+            ) => {
+                const fullText = quoteLines.join(" ");
+                const cleanText = cleanInline(fullText);
 
-            const lines =
-                aiReport.split("\n");
+                // Estimate/calculate the height of the text inside the box
+                const textHeight = doc.heightOfString(cleanText, {
+                    width: 440,
+                    lineGap: 6,
+                    font: "Helvetica-Oblique",
+                    fontSize: 11
+                });
+                const boxHeight = textHeight + 24; // 12px padding top/bottom
 
-            for (let line of lines) {
-                let trimmed = line.trim();
-
-                if (!trimmed) {
-                    doc.moveDown(0.7);
-                    continue;
+                // Check page overflow
+                if (doc.y + boxHeight > doc.page.height - doc.page.margins.bottom) {
+                    doc.addPage();
                 }
 
-                if (
-                    trimmed.match(
-                        /^[-_*]{3,}$/
+                const boxY = doc.y;
+
+                // Draw background
+                doc
+                    .roundedRect(
+                        55,
+                        boxY,
+                        485,
+                        boxHeight,
+                        6
                     )
-                ) {
-                    doc.moveDown(1);
-                    continue;
+                    .fill("#EEF4FF");
+
+                // Draw left border
+                doc
+                    .rect(
+                        55,
+                        boxY,
+                        6,
+                        boxHeight
+                    )
+                    .fill("#2563EB");
+
+                // Position cursor and render text inside
+                doc.x = 75;
+                doc.y = boxY + 12;
+                renderTextWithBold(fullText, {
+                    width: 440,
+                    lineGap: 6,
+                    align: "justify",
+                    font: "Helvetica-Oblique",
+                    boldFont: "Helvetica-BoldOblique",
+                    color: "#1E3A8A",
+                    boldColor: "#1E3A8A"
+                });
+
+                // Reset positioning and font/color
+                doc.fillColor("#374151").font("Helvetica");
+                doc.x = 60; // reset margin left
+                doc.y = boxY + boxHeight;
+                doc.moveDown(1);
+            };
+
+            const renderTable = (doc: any, tableLines: string[]) => {
+                const rows = tableLines
+                    .map(line => {
+                        const parts = line.split("|").map(p => p.trim());
+                        if (parts[0] === "") parts.shift();
+                        if (parts[parts.length - 1] === "") parts.pop();
+                        return parts;
+                    })
+                    .filter(row => {
+                        return !row.every(cell => cell.match(/^:?-+:?$/));
+                    });
+
+                if (rows.length === 0) return;
+
+                const numCols = rows[0].length;
+                const startX = doc.page.margins.left;
+                const tableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+                // Calculate dynamic column widths based on content
+                const colMinWidths = new Array(numCols).fill(0);
+                const colDesiredWidths = new Array(numCols).fill(0);
+
+                for (let c = 0; c < numCols; c++) {
+                    let maxUnwrappedWidth = 0;
+                    let maxWordWidth = 0;
+
+                    for (let r = 0; r < rows.length; r++) {
+                        const cellText = cleanInline(rows[r][c] || "");
+                        
+                        // Explicitly set font/size before measuring string width
+                        doc.font(r === 0 ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+                        const cellWidth = doc.widthOfString(cellText);
+                        if (cellWidth > maxUnwrappedWidth) {
+                            maxUnwrappedWidth = cellWidth;
+                        }
+
+                        // Measure the width of individual words to find the minimum column width
+                        const words = cellText.split(/\s+/);
+                        words.forEach(word => {
+                            const wordWidth = doc.widthOfString(word);
+                            if (wordWidth > maxWordWidth) {
+                                maxWordWidth = wordWidth;
+                            }
+                        });
+                    }
+
+                    // Add padding (8px left, 8px right) and set minimum limits
+                    colMinWidths[c] = Math.max(45, maxWordWidth + 18);
+                    colDesiredWidths[c] = maxUnwrappedWidth + 18;
                 }
 
-                // =========================
-                // HEADINGS
-                // =========================
+                // Distribute column widths proportionally
+                let totalMinWidth = colMinWidths.reduce((a, b) => a + b, 0);
+                let colWidths = [...colMinWidths];
 
-                if (
-                    trimmed.match(
-                        /^#{1,6}\s/
-                    )
-                ) {
-                    const level =
-                        trimmed.match(
-                            /^(#{1,6})\s/
-                        )?.[1].length || 1;
+                if (totalMinWidth < tableWidth) {
+                    const extraWidth = tableWidth - totalMinWidth;
+                    const colWeights = colDesiredWidths.map((desired, idx) => {
+                        return Math.max(0, desired - colMinWidths[idx]);
+                    });
+                    const totalWeight = colWeights.reduce((a, b) => a + b, 0);
 
-                    const text =
-                        cleanInline(
-                            trimmed
-                                .replace(
-                                    /^#{1,6}\s+/,
-                                    ""
-                                )
-                                .replace(
-                                    /\*\*(.*?)\*\*/g,
-                                    "$1"
-                                )
-                        );
-
-                    if (level === 1) {
-                        doc.moveDown(2);
-
-                        const headingY = doc.y;
-
-                        // Dark blue rounded style block
-                        doc
-                            .roundedRect(
-                                50,
-                                headingY,
-                                495,
-                                42,
-                                8
-                            )
-                            .fill("#1E3A8A");
-
-                        doc
-                            .fillColor("#FFFFFF")
-                            .fontSize(22)
-                            .font("Helvetica-Bold")
-                            .text(
-                                text,
-                                70,
-                                headingY + 12
-                            );
-
-                        doc.moveDown(1.2);
+                    if (totalWeight > 0) {
+                        for (let c = 0; c < numCols; c++) {
+                            colWidths[c] += (colWeights[c] / totalWeight) * extraWidth;
+                        }
                     } else {
-                        doc.moveDown(1.5);
-
-                        doc
-                            .fontSize(16)
-                            .font(
-                                "Helvetica-Bold"
-                            )
-                            .fillColor(
-                                "#1E3A8A"
-                            )
-                            .text(text);
-
-                        doc.moveDown(0.8);
+                        const equalExtra = extraWidth / numCols;
+                        for (let c = 0; c < numCols; c++) {
+                            colWidths[c] += equalExtra;
+                        }
                     }
                 }
 
-                // =========================
-                // BULLETS
-                // =========================
+                // Precompute heights of all rows using dynamic column widths
+                const rowHeights = new Array(rows.length).fill(0);
+                for (let r = 0; r < rows.length; r++) {
+                    const row = rows[r];
+                    const isHeader = r === 0;
+                    let maxCellHeight = 0;
 
-                else if (
-                    trimmed.match(
-                        /^[-*+]\s/
-                    )
-                ) {
-                    const text =
-                        trimmed.replace(
-                            /^[-*+]\s+/,
-                            ""
-                        );
+                    for (let c = 0; c < row.length; c++) {
+                        const cellText = cleanInline(row[c] || "");
+                        const cellWidth = colWidths[c];
 
-                    doc.fontSize(12);
-
-                    renderTextWithBold(
-                        `• ${text}`,
-                        {
-                            lineGap: 8,
-                            indent: 18,
-                            font: "Helvetica",
-                            color:
-                                "#444444",
+                        doc.font(isHeader ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+                        const cellHeight = doc.heightOfString(cellText, {
+                            width: cellWidth - 16
+                        });
+                        if (cellHeight > maxCellHeight) {
+                            maxCellHeight = cellHeight;
                         }
-                    );
+                    }
+                    rowHeights[r] = maxCellHeight + 12; // 6px top, 6px bottom padding
                 }
 
-                // =========================
-                // NUMBERED LIST
-                // =========================
-
-                else if (
-                    trimmed.match(
-                        /^\d+\.\s/
-                    )
-                ) {
-                    const num =
-                        trimmed.match(
-                            /^(\d+\.)\s/
-                        )?.[1] || "";
-
-                    const text =
-                        trimmed.replace(
-                            /^\d+\.\s+/,
-                            ""
-                        );
-
-                    doc.fontSize(12);
-
-                    renderTextWithBold(
-                        `${num} ${text}`,
-                        {
-                            lineGap: 8,
-                            indent: 18,
-                            font: "Helvetica",
-                            color:
-                                "#444444",
-                        }
-                    );
+                // Check if there is enough space to draw the header + at least one data row
+                const minInitialHeight = rowHeights[0] + (rowHeights[1] || 30);
+                if (doc.y + minInitialHeight > doc.page.height - doc.page.margins.bottom) {
+                    doc.addPage();
                 }
 
-                // =========================
-                // PARAGRAPHS
-                // =========================
-                else {
+                doc.moveDown(0.5);
 
-                    const lower = trimmed.toLowerCase();
+                for (let r = 0; r < rows.length; r++) {
+                    const row = rows[r];
+                    const isHeader = r === 0;
+                    const rowHeight = rowHeights[r];
 
-                    const isHighlight =
-                        lower.includes("key finding") ||
-                        lower.includes("clinical insight") ||
-                        lower.includes("market potential") ||
-                        lower.includes("important") ||
-                        lower.includes("safety warning");
+                    // Check if row fits on current page. If not, add page and redraw header
+                    if (r > 0 && doc.y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+                        doc.addPage();
 
-                    // =========================
-                    // HIGHLIGHT BOX
-                    // =========================
-                    if (isHighlight) {
+                        // Redraw header row on the new page
+                        const headerHeight = rowHeights[0];
+                        const headerY = doc.y;
 
-                        const boxY = doc.y;
+                        doc.rect(startX, headerY, tableWidth, headerHeight).fill("#1E3A8A");
 
-                        const boxHeight = 70;
+                        let headerX = startX;
+                        for (let c = 0; c < rows[0].length; c++) {
+                            const cellText = cleanInline(rows[0][c] || "");
+                            const cellWidth = colWidths[c];
 
-                        // Background
-                        doc
-                            .roundedRect(
-                                55,
-                                boxY,
-                                485,
-                                boxHeight,
-                                6
-                            )
-                            .fill("#EEF4FF");
+                            doc.fillColor("#FFFFFF")
+                               .fontSize(10)
+                               .font("Helvetica-Bold");
 
-                        // Left border
-                        doc
-                            .rect(
-                                55,
-                                boxY,
-                                6,
-                                boxHeight
-                            )
-                            .fill("#2563EB");
+                            doc.text(cellText, headerX + 8, headerY + 6, {
+                                width: cellWidth - 16,
+                                align: "left"
+                            });
+                            headerX += cellWidth;
+                        }
 
-                        doc
-                            .fillColor("#111827")
-                            .fontSize(12);
+                        doc.strokeColor("#E5E7EB")
+                           .lineWidth(1)
+                           .moveTo(startX, headerY + headerHeight)
+                           .lineTo(startX + tableWidth, headerY + headerHeight)
+                           .stroke();
 
-                        doc.text(
-                            trimmed,
-                            75,
-                            boxY + 15,
-                            {
-                                width: 440,
-                                lineGap: 6,
-                                align: "justify",
-                            }
-                        );
-
-                        doc.moveDown(4);
+                        doc.y = headerY + headerHeight;
                     }
 
-                    // =========================
-                    // NORMAL PARAGRAPH
-                    // =========================
-                    else {
+                    const y = doc.y;
 
+                    // Draw row background
+                    if (isHeader) {
+                        doc.rect(startX, y, tableWidth, rowHeight).fill("#1E3A8A");
+                    } else if (r % 2 === 0) {
+                        doc.rect(startX, y, tableWidth, rowHeight).fill("#F9FAFB");
+                    }
+
+                    // Draw cells
+                    let currentX = startX;
+                    for (let c = 0; c < row.length; c++) {
+                        const cellText = cleanInline(row[c] || "");
+                        const cellWidth = colWidths[c];
+
+                        doc.fillColor(isHeader ? "#FFFFFF" : "#374151")
+                           .fontSize(10)
+                           .font(isHeader ? "Helvetica-Bold" : "Helvetica");
+
+                        doc.text(cellText, currentX + 8, y + 6, {
+                            width: cellWidth - 16,
+                            align: "left"
+                        });
+                        
+                        currentX += cellWidth;
+                    }
+
+                    doc.fillColor("#374151");
+
+                    // Draw horizontal line at the bottom of the row
+                    doc.strokeColor("#E5E7EB")
+                       .lineWidth(1)
+                       .moveTo(startX, y + rowHeight)
+                       .lineTo(startX + tableWidth, y + rowHeight)
+                       .stroke();
+
+                    doc.y = y + rowHeight;
+                }
+
+                doc.moveDown(1);
+            };
+
+            const renderLiteratureTableAndCharts = (doc: any, articles: any[]) => {
+                if (!articles || articles.length === 0) {
+                    doc.fontSize(11).font("Helvetica-Oblique").fillColor("#EF4444")
+                       .text("No retrieved literature records.");
+                    doc.moveDown(1);
+                    return;
+                }
+
+                // Draw Table Title
+                doc.moveDown(1.5);
+                doc.fontSize(12).font("Helvetica-Bold").fillColor("#1E3A8A").text("Retrieved PubMed Publications Database");
+                doc.moveDown(0.5);
+
+                const tableRows = [
+                    ["PMID", "Title", "Year", "Relevance"]
+                ];
+                articles.forEach((art: any) => {
+                    const yearMatch = art.publishDate?.match(/\b(19\d\d|20\d\d)\b/);
+                    const year = yearMatch ? yearMatch[1] : "N/A";
+                    // Truncate title for table fit
+                    let truncatedTitle = art.title || "No Title";
+                    if (truncatedTitle.length > 55) {
+                        truncatedTitle = truncatedTitle.substring(0, 52) + "...";
+                    }
+                    tableRows.push([
+                        art.id || "N/A",
+                        truncatedTitle,
+                        year,
+                        art.relevance || "RELATED"
+                    ]);
+                });
+                renderTable(doc, tableRows.map(row => `| ${row.join(" | ")} |`));
+
+                // Aggregate publications by year for Chart A
+                const yearCounts: { [key: string]: number } = {};
+                articles.forEach((art: any) => {
+                    const yearMatch = art.publishDate?.match(/\b(19\d\d|20\d\d)\b/);
+                    const year = yearMatch ? yearMatch[1] : "Unknown";
+                    yearCounts[year] = (yearCounts[year] || 0) + 1;
+                });
+                const sortedYears = Object.keys(yearCounts).sort().filter(y => y !== "Unknown" && y !== "N/A");
+
+                if (sortedYears.length > 0) {
+                    // Check page space
+                    if (doc.y + 160 > doc.page.height - doc.page.margins.bottom) {
+                        doc.addPage();
+                    }
+                    doc.moveDown(1.5);
+                    const chartY = doc.y;
+
+                    // Draw Chart Container Card
+                    doc.roundedRect(60, chartY, 475, 130, 6).fill("#F3F4F6");
+                    doc.fillColor("#1F2937").fontSize(10).font("Helvetica-Bold").text("Publication Trend by Year (Retrieved Sample)", 75, chartY + 10);
+
+                    // Draw X/Y axes
+                    const graphLeft = 100;
+                    const graphBottom = chartY + 105;
+                    const graphHeight = 65;
+                    const graphWidth = 320;
+
+                    doc.strokeColor("#9CA3AF").lineWidth(1)
+                       .moveTo(graphLeft, graphBottom - graphHeight).lineTo(graphLeft, graphBottom)
+                       .lineTo(graphLeft + graphWidth, graphBottom).stroke();
+
+                    // Find max value for scaling
+                    const maxVal = Math.max(...Object.values(yearCounts));
+                    const numBars = sortedYears.length;
+                    const barSpacing = graphWidth / numBars;
+                    const barWidth = Math.max(10, barSpacing * 0.6);
+
+                    sortedYears.forEach((year, index) => {
+                        const count = yearCounts[year];
+                        const valHeight = (count / maxVal) * graphHeight;
+                        const barX = graphLeft + (index * barSpacing) + (barSpacing - barWidth) / 2;
+                        const barY = graphBottom - valHeight;
+
+                        // Draw bar
+                        doc.rect(barX, barY, barWidth, valHeight).fill("#2563EB");
+
+                        // Labels
+                        doc.fillColor("#475569").fontSize(8).font("Helvetica").text(year, barX - 10, graphBottom + 5, { width: barWidth + 20, align: "center" });
+                        doc.fillColor("#1E3A8A").fontSize(8).font("Helvetica-Bold").text(count.toString(), barX - 10, barY - 10, { width: barWidth + 20, align: "center" });
+                    });
+                    
+                    doc.y = chartY + 130;
+                    doc.moveDown(1);
+                }
+            };
+
+            const normalizePhase = (phaseVal: any): string => {
+                if (!phaseVal) return "N/A";
+                
+                let val = "";
+                if (Array.isArray(phaseVal)) {
+                    val = phaseVal[0] || "";
+                } else if (typeof phaseVal === "string") {
+                    val = phaseVal;
+                }
+                
+                val = val.trim().toUpperCase().replace(/[:]/g, "");
+                
+                if (!val || val === "NA" || val === "N/A" || val === "NOT SPECIFIED" || val === "NOT_SPECIFIED" || val === "NOT APPLICABLE" || val === "NOT_APPLICABLE") {
+                    return "N/A";
+                }
+                
+                return val;
+            };
+
+            const renderClinicalTrialTableAndCharts = (doc: any, trials: any[]) => {
+                if (!trials || trials.length === 0) {
+                    doc.fontSize(11).font("Helvetica-Oblique").fillColor("#EF4444")
+                       .text("No retrieved clinical trial records.");
+                    doc.moveDown(1);
+                    return;
+                }
+
+                // Draw Table Title
+                doc.moveDown(1.5);
+                doc.fontSize(12).font("Helvetica-Bold").fillColor("#1E3A8A").text("Retrieved ClinicalTrials.gov Registry Studies Database");
+                doc.moveDown(0.5);
+
+                const tableRows = [
+                    ["NCT ID", "Study Title", "Status", "Phase", "Relevance"]
+                ];
+                trials.forEach((trial: any) => {
+                    let truncatedTitle = trial.briefTitle || trial.title || "No Title";
+                    if (truncatedTitle.length > 55) {
+                        truncatedTitle = truncatedTitle.substring(0, 52) + "...";
+                    }
+                    tableRows.push([
+                        trial.trialId || "N/A",
+                        truncatedTitle,
+                        trial.status || "UNKNOWN",
+                        normalizePhase(trial.phase),
+                        trial.relevance || "RELATED"
+                    ]);
+                });
+                renderTable(doc, tableRows.map(row => `| ${row.join(" | ")} |`));
+
+                // Aggregate trials by phase (using normalized phase counts)
+                const phaseCounts: { [key: string]: number } = {};
+                trials.forEach((t: any) => {
+                    const phase = normalizePhase(t.phase);
+                    phaseCounts[phase] = (phaseCounts[phase] || 0) + 1;
+                });
+
+                const phases = Object.keys(phaseCounts); // Do NOT filter out N/A!
+
+                if (phases.length > 0) {
+                    if (doc.y + 180 > doc.page.height - doc.page.margins.bottom) {
+                        doc.addPage();
+                    }
+                    doc.moveDown(1.5);
+                    const chartY = doc.y;
+
+                    // Draw Chart Card (increased height to 150 to accommodate N/A safely)
+                    doc.roundedRect(60, chartY, 475, 150, 6).fill("#F3F4F6");
+                    doc.fillColor("#1F2937").fontSize(10).font("Helvetica-Bold").text("Clinical Trials Phase Distribution (Retrieved Sample)", 75, chartY + 10);
+
+                    const graphLeft = 140;
+                    const graphWidth = 280;
+                    const rowHeight = 18;
+
+                    let yOffset = chartY + 30;
+                    const maxVal = Math.max(...Object.values(phaseCounts));
+
+                    phases.forEach((phase) => {
+                        const count = phaseCounts[phase];
+                        const barLength = Math.max(10, (count / maxVal) * graphWidth);
+
+                        // Label
+                        doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text(phase, 75, yOffset + 3, { width: 60, align: "right" });
+
+                        // Bar
+                        doc.rect(graphLeft, yOffset, barLength, 10).fill("#10B981");
+
+                        // Value
+                        doc.fillColor("#047857").fontSize(8).font("Helvetica-Bold").text(count.toString(), graphLeft + barLength + 6, yOffset + 1);
+
+                        yOffset += rowHeight;
+                    });
+
+                    doc.y = chartY + 150;
+                    doc.moveDown(1);
+                }
+
+                // Aggregate trials by status (Chart C)
+                const statusCounts: { [key: string]: number } = {};
+                trials.forEach((t: any) => {
+                    const status = t.status || "UNKNOWN";
+                    statusCounts[status] = (statusCounts[status] || 0) + 1;
+                });
+
+                const statuses = Object.keys(statusCounts).filter(s => s !== "UNKNOWN");
+                if (statusCounts["UNKNOWN"]) {
+                    statuses.push("UNKNOWN");
+                }
+
+                if (statuses.length > 0) {
+                    if (doc.y + 160 > doc.page.height - doc.page.margins.bottom) {
+                        doc.addPage();
+                    }
+                    doc.moveDown(1.5);
+                    const chartY = doc.y;
+
+                    // Draw Chart Card
+                    doc.roundedRect(60, chartY, 475, 130, 6).fill("#F3F4F6");
+                    doc.fillColor("#1F2937").fontSize(10).font("Helvetica-Bold").text("Clinical Trials Status Distribution (Retrieved Sample)", 75, chartY + 10);
+
+                    const graphLeft = 140;
+                    const graphWidth = 280;
+                    const rowHeight = 18;
+
+                    let yOffset = chartY + 30;
+                    const maxVal = Math.max(...Object.values(statusCounts));
+
+                    statuses.forEach((status) => {
+                        const count = statusCounts[status];
+                        const barLength = Math.max(10, (count / maxVal) * graphWidth);
+
+                        // Label
+                        doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text(status, 75, yOffset + 3, { width: 60, align: "right" });
+
+                        // Bar
+                        doc.rect(graphLeft, yOffset, barLength, 10).fill("#3B82F6");
+
+                        // Value
+                        doc.fillColor("#1D4ED8").fontSize(8).font("Helvetica-Bold").text(count.toString(), graphLeft + barLength + 6, yOffset + 1);
+
+                        yOffset += rowHeight;
+                    });
+
+                    doc.y = chartY + 130;
+                    doc.moveDown(1);
+                }
+            };
+
+            const renderDeterministicEvidenceSummary = (doc: any, data: any) => {
+                const articles = data?.literatureData?.articles || [];
+                const trials = data?.clinicalTrialData?.trials || [];
+
+                let directLit = 0, relatedLit = 0, indirectLit = 0;
+                articles.forEach((a: any) => {
+                    if (a.relevance === "DIRECT") directLit++;
+                    else if (a.relevance === "RELATED") relatedLit++;
+                    else if (a.relevance === "INDIRECT") indirectLit++;
+                });
+
+                let directCt = 0, relatedCt = 0, indirectCt = 0;
+                trials.forEach((t: any) => {
+                    if (t.relevance === "DIRECT") directCt++;
+                    else if (t.relevance === "RELATED") relatedCt++;
+                    else if (t.relevance === "INDIRECT") indirectCt++;
+                });
+
+                const totalDirect = directLit + directCt;
+                const totalRelated = relatedLit + relatedCt;
+                const totalIndirect = indirectLit + indirectCt;
+
+                const boxHeight = 100;
+                if (doc.y + boxHeight > doc.page.height - doc.page.margins.bottom) {
+                    doc.addPage();
+                }
+
+                const boxY = doc.y;
+
+                doc.roundedRect(60, boxY, 475, boxHeight, 6).fill("#F3F4F6");
+
+                doc.fillColor("#111827").fontSize(11).font("Helvetica-Bold").text("Evidence Database Counts (Deterministic Summary)", 75, boxY + 12);
+
+                let textY = boxY + 35;
+                doc.fontSize(10).font("Helvetica").fillColor("#374151");
+                
+                doc.text(`PubMed Publications:`, 75, textY);
+                doc.font("Helvetica-Bold").text(`DIRECT: ${directLit}   |   RELATED: ${relatedLit}   |   INDIRECT: ${indirectLit}`, 220, textY);
+                
+                textY += 18;
+                doc.font("Helvetica").text(`ClinicalTrials.gov:`, 75, textY);
+                doc.font("Helvetica-Bold").text(`DIRECT: ${directCt}   |   RELATED: ${relatedCt}   |   INDIRECT: ${indirectCt}`, 220, textY);
+
+                textY += 18;
+                doc.font("Helvetica").text(`Total Aggregated:`, 75, textY);
+                doc.font("Helvetica-Bold").fillColor("#1E3A8A").text(`DIRECT: ${totalDirect}   |   RELATED: ${totalRelated}   |   INDIRECT: ${totalIndirect}`, 220, textY);
+
+                doc.x = 60;
+                doc.y = boxY + boxHeight;
+                doc.moveDown(1);
+            };
+
+            const renderDeterministicFDAInfo = (doc: any, fdaData: any) => {
+                if (!fdaData) {
+                    doc.fontSize(11).font("Helvetica-Oblique").fillColor("#666666")
+                       .text("No OpenFDA regulatory drug label record retrieved for this query.");
+                    doc.moveDown(1);
+                    return;
+                }
+
+                const boxHeight = 135;
+                if (doc.y + boxHeight > doc.page.height - doc.page.margins.bottom) {
+                    doc.addPage();
+                }
+
+                doc.moveDown(1);
+                const boxY = doc.y;
+
+                doc.roundedRect(60, boxY, 475, boxHeight, 6).fill("#F3F4F6");
+                doc.fillColor("#1E3A8A").fontSize(11).font("Helvetica-Bold")
+                   .text("OpenFDA Regulatory Label Data (Retrieved Record)", 75, boxY + 12);
+
+                let textY = boxY + 32;
+                doc.fontSize(10).font("Helvetica").fillColor("#374151");
+
+                doc.text("Generic Name:", 75, textY);
+                doc.font("Helvetica-Bold").text(fdaData.genericName || "Not available", 180, textY);
+
+                textY += 16;
+                doc.font("Helvetica").text("Brand Name:", 75, textY);
+                doc.font("Helvetica-Bold").text(fdaData.brandName || "Not available", 180, textY);
+
+                textY += 16;
+                doc.font("Helvetica").text("Manufacturer:", 75, textY);
+                doc.font("Helvetica-Bold").text(fdaData.manufacturer || "Not available", 180, textY);
+
+                textY += 16;
+                doc.font("Helvetica").text("Approved Indications:", 75, textY);
+                let indications = fdaData.indicationsAndUsage || "Not available in retrieved FDA data";
+                if (indications.length > 120) indications = indications.substring(0, 117) + "...";
+                doc.font("Helvetica").fillColor("#4B5563").text(cleanInline(indications), 180, textY, { width: 340 });
+
+                textY += 28;
+                doc.fontSize(8).font("Helvetica-Oblique").fillColor("#6B7280")
+                   .text("Note: Retrieved OpenFDA label record reflects specific API return, not universal manufacturer or repurposing endorsement.", 75, textY, { width: 440 });
+
+                doc.x = 60;
+                doc.y = boxY + boxHeight;
+                doc.moveDown(1);
+            };
+
+            const renderDeterministicReferences = (doc: any, data: any) => {
+                const articles = data?.literatureData?.articles || [];
+                const trials = data?.clinicalTrialData?.trials || [];
+
+                if (articles.length === 0 && trials.length === 0) {
+                    doc.fontSize(11).font("Helvetica-Oblique").fillColor("#666666")
+                       .text("No retrieved publications or clinical trial references.");
+                    return;
+                }
+
+                if (articles.length > 0) {
+                    doc.moveDown(1);
+                    doc.fontSize(12).font("Helvetica-Bold").fillColor("#1E3A8A").text("Retrieved PubMed Publications");
+                    doc.moveDown(0.5);
+                    articles.forEach((art: any, idx: number) => {
+                        const authors = art.authors ? (Array.isArray(art.authors) ? art.authors.slice(0, 3).join(", ") : art.authors) : "Unknown Authors";
+                        const journal = art.journal || "Biomedical Literature";
+                        const yearMatch = art.publishDate?.match(/\b(19\d\d|20\d\d)\b/);
+                        const year = yearMatch ? ` (${yearMatch[1]})` : "";
+                        const refText = `${idx + 1}. ${authors}. "${art.title || 'Untitled'}" ${journal}${year}. [PMID: ${art.id || 'N/A'}]`;
+                        
+                        doc.fontSize(10);
+                        renderTextWithBold(refText, {
+                            lineGap: 4,
+                            font: "Helvetica",
+                            color: "#374151",
+                        });
+                        doc.moveDown(0.4);
+                    });
+                    doc.moveDown(1);
+                }
+
+                if (trials.length > 0) {
+                    doc.moveDown(1);
+                    doc.fontSize(12).font("Helvetica-Bold").fillColor("#1E3A8A").text("Retrieved ClinicalTrials.gov Registry Studies");
+                    doc.moveDown(0.5);
+                    trials.forEach((trial: any, idx: number) => {
+                        const title = trial.briefTitle || trial.title || "Untitled Study";
+                        const phase = normalizePhase(trial.phase);
+                        const status = trial.status || "Status Unknown";
+                        const refText = `${idx + 1}. [NCT: ${trial.trialId || 'N/A'}] ${title} (Phase: ${phase}, Status: ${status}).`;
+
+                        doc.fontSize(10);
+                        renderTextWithBold(refText, {
+                            lineGap: 4,
+                            font: "Helvetica",
+                            color: "#374151",
+                        });
+                        doc.moveDown(0.4);
+                    });
+                    doc.moveDown(1);
+                }
+            };
+
+            const parseSectionsFromMarkdown = (markdown: string) => {
+                const lines = markdown.split("\n");
+                const sections: { [key: string]: string[] } = {};
+                let currentHeading = "preamble";
+                sections[currentHeading] = [];
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    const headingMatch = trimmed.match(/^#\s+(.+)$/);
+                    if (headingMatch) {
+                        currentHeading = normalizeSectionName(headingMatch[1]);
+                        sections[currentHeading] = [];
+                    } else {
+                        sections[currentHeading].push(line);
+                    }
+                }
+                return sections;
+            };
+
+            const findSectionContent = (sections: { [key: string]: string[] }, keyword: string): string[] => {
+                const keys = Object.keys(sections);
+                const foundKey = keys.find(k => k.includes(keyword.toLowerCase()));
+                return foundKey ? sections[foundKey] : [];
+            };
+
+            const renderSectionHeading = (title: string) => {
+                if (doc.y + 60 > doc.page.height - doc.page.margins.bottom) {
+                    doc.addPage();
+                }
+                doc.moveDown(1);
+                const headingY = doc.y;
+                const currentPageNum = doc.bufferedPageRange().start + doc.bufferedPageRange().count;
+                sectionPages[normalizeSectionName(title)] = currentPageNum;
+
+                // Dark blue rounded style block
+                doc.roundedRect(50, headingY, 495, 42, 8).fill("#1E3A8A");
+                doc.fillColor("#FFFFFF")
+                   .fontSize(16)
+                   .font("Helvetica-Bold")
+                   .text(title, 70, headingY + 13, { width: 455 });
+
+                doc.y = headingY + 42;
+                doc.moveDown(1);
+            };
+
+            const renderSectionContent = (lines: string[]) => {
+                let tableLines: string[] = [];
+                let quoteLines: string[] = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    let trimmed = line.trim();
+
+                    if (trimmed.startsWith("|")) {
+                        if (quoteLines.length > 0) {
+                            renderQuoteBox(doc, quoteLines);
+                            quoteLines = [];
+                        }
+                        tableLines.push(trimmed);
+                        continue;
+                    } else if (tableLines.length > 0) {
+                        renderTable(doc, tableLines);
+                        tableLines = [];
+                    }
+
+                    if (trimmed.startsWith(">")) {
+                        quoteLines.push(trimmed.replace(/^>\s*/, ""));
+                        continue;
+                    } else if (quoteLines.length > 0) {
+                        renderQuoteBox(doc, quoteLines);
+                        quoteLines = [];
+                    }
+
+                    if (!trimmed) {
+                        doc.moveDown(0.7);
+                        continue;
+                    }
+
+                    if (trimmed.match(/^[-_*]{3,}$/)) {
+                        doc.moveDown(1);
+                        continue;
+                    }
+
+                    const headingMatch = trimmed.match(/^(#{2,6})\s+(.+)$/);
+                    if (headingMatch) {
+                        const text = cleanInline(headingMatch[2]);
+                        if (doc.y + 40 > doc.page.height - doc.page.margins.bottom) {
+                            doc.addPage();
+                        }
+                        doc.moveDown(1);
+                        doc.fontSize(14).font("Helvetica-Bold").fillColor("#1E3A8A").text(text);
+                        doc.moveDown(0.5);
+                        continue;
+                    }
+
+                    if (trimmed.match(/^[-*+]\s/)) {
+                        const text = trimmed.replace(/^[-*+]\s+/, "");
                         doc.fontSize(12);
-
-                        renderTextWithBold(
-                            trimmed,
-                            {
-                                lineGap: 10,
-                                font: "Helvetica",
-                                color: "#374151",
-                                align: "justify",
-                            }
-                        );
-
+                        renderTextWithBold(`• ${text}`, {
+                            lineGap: 8,
+                            indent: 18,
+                            font: "Helvetica",
+                            color: "#444444",
+                        });
+                    } else if (trimmed.match(/^\d+\.\s/)) {
+                        const num = trimmed.match(/^(\d+\.)\s/)?.[1] || "";
+                        const text = trimmed.replace(/^\d+\.\s+/, "");
+                        doc.fontSize(12);
+                        renderTextWithBold(`${num} ${text}`, {
+                            lineGap: 8,
+                            indent: 18,
+                            font: "Helvetica",
+                            color: "#444444",
+                        });
+                    } else {
+                        doc.fontSize(12);
+                        renderTextWithBold(trimmed, {
+                            lineGap: 10,
+                            font: "Helvetica",
+                            color: "#374151",
+                            align: "justify",
+                        });
                         doc.moveDown(0.8);
                     }
                 }
-            } // Close the for (let line of lines) loop
+
+                if (tableLines.length > 0) {
+                    renderTable(doc, tableLines);
+                }
+                if (quoteLines.length > 0) {
+                    renderQuoteBox(doc, quoteLines);
+                }
+            };
+
+            // =========================
+            // MAIN CONTENT RENDER LOOP
+            // =========================
+
+            let structured: any = null;
+            if (reportData?.structuredReport && typeof reportData.structuredReport === "object") {
+                structured = reportData.structuredReport;
+            } else if (typeof aiReport === "object" && aiReport !== null) {
+                structured = aiReport;
+            } else if (typeof aiReport === "string") {
+                try {
+                    const parsed = JSON.parse(aiReport);
+                    if (parsed && typeof parsed === "object" && parsed.researchQuestion) {
+                        structured = parsed;
+                    }
+                } catch {
+                    // Not JSON string, will use markdown fallback
+                }
+            }
+
+            const sections = parseSectionsFromMarkdown(typeof aiReport === "string" ? aiReport : "");
+            const sectionPages: { [key: string]: number } = {};
+
+            const getSectionLines = (key: string, fallbackKeyword: string): string[] => {
+                if (structured && structured[key] && typeof structured[key] === "string" && structured[key].trim().length > 0) {
+                    return structured[key].trim().split("\n");
+                }
+                return findSectionContent(sections, fallbackKeyword);
+            };
+
+            // 1. Research Question
+            renderSectionHeading("Research Question");
+            const rqContent = getSectionLines("researchQuestion", "research question");
+            if (rqContent.length > 0) {
+                renderSectionContent(rqContent);
+            } else {
+                renderSectionContent([`Research Investigation Query: ${query}`]);
+            }
+
+            // 2. Executive Summary
+            renderSectionHeading("Executive Summary");
+            renderSectionContent(getSectionLines("summary", "executive summary"));
+
+            // 3. Evidence Overview
+            renderSectionHeading("Evidence Overview");
+            renderSectionContent(getSectionLines("evidenceOverview", "evidence overview"));
+            renderDeterministicEvidenceSummary(doc, reportData);
+
+            // 4. Literature Evidence
+            renderSectionHeading("Literature Evidence");
+            const litContent = getSectionLines("literatureEvidence", "literature");
+            if (litContent.length > 0) {
+                renderSectionContent(litContent);
+            } else {
+                doc.fontSize(12).font("Helvetica").fillColor("#374151")
+                   .text("Evidence status: No qualitative literature summary generated.");
+                doc.moveDown(1);
+            }
+            renderLiteratureTableAndCharts(doc, reportData?.literatureData?.articles);
+
+            // 5. Clinical Trial Evidence
+            renderSectionHeading("Clinical Trial Evidence");
+            const ctContent = getSectionLines("clinicalTrialEvidence", "clinical trial");
+            if (ctContent.length > 0) {
+                renderSectionContent(ctContent);
+            } else {
+                doc.fontSize(12).font("Helvetica").fillColor("#374151")
+                   .text("Evidence status: No qualitative clinical trial summary generated.");
+                doc.moveDown(1);
+            }
+            renderClinicalTrialTableAndCharts(doc, reportData?.clinicalTrialData?.trials);
+
+            // 6. Drug Overview
+            renderSectionHeading("Drug Overview");
+            renderSectionContent(getSectionLines("drugOverview", "drug overview"));
+            renderDeterministicFDAInfo(doc, reportData?.drugInfoData?.drugData);
+
+            // 7. Target Disease Overview
+            renderSectionHeading("Target Disease Overview");
+            let diseaseContent = getSectionLines("diseaseOverview", "disease");
+            if (diseaseContent.length === 0) {
+                diseaseContent = findSectionContent(sections, "condition");
+            }
+            renderSectionContent(diseaseContent);
+
+            // 8. Repurposing Rationale
+            renderSectionHeading("Repurposing Rationale");
+            let rationaleContent = getSectionLines("repurposingRationale", "rationale");
+            if (rationaleContent.length === 0) {
+                rationaleContent = findSectionContent(sections, "mechanism");
+            }
+            renderSectionContent(rationaleContent);
+
+            // 9. Safety & Contraindications
+            renderSectionHeading("Safety & Contraindications");
+            let safetyContent = getSectionLines("safety", "safety");
+            if (safetyContent.length === 0) {
+                safetyContent = findSectionContent(sections, "contraindications");
+            }
+            renderSectionContent(safetyContent);
+
+            // 10. Repurposing Assessment
+            renderSectionHeading("Repurposing Assessment");
+            let assessmentContent = getSectionLines("assessment", "assessment");
+            if (assessmentContent.length === 0) {
+                assessmentContent = findSectionContent(sections, "potential");
+            }
+            renderSectionContent(assessmentContent);
+
+            // 11. Limitations
+            renderSectionHeading("Limitations");
+            renderSectionContent(getSectionLines("limitations", "limitation"));
+
+            // 12. Conclusion
+            renderSectionHeading("Conclusion");
+            let conclusionContent = getSectionLines("conclusion", "conclusion");
+            if (conclusionContent.length === 0) {
+                conclusionContent = findSectionContent(sections, "gaps");
+            }
+            renderSectionContent(conclusionContent);
+
+            // 13. References
+            renderSectionHeading("References");
+            const markdownRefLines = findSectionContent(sections, "reference");
+            if (markdownRefLines.length > 0) {
+                renderSectionContent(markdownRefLines);
+            }
+            renderDeterministicReferences(doc, reportData);
+
+            // Switch back to TOC page (index 1) to write dynamic page numbers
+            doc.switchToPage(1);
+            tocPositions.forEach((tocItem) => {
+                const pageNum = sectionPages[normalizeSectionName(tocItem.name)];
+                if (pageNum) {
+                    doc.fontSize(11)
+                       .font("Helvetica")
+                       .fillColor("#666666")
+                       .text(pageNum.toString(), 0, tocItem.y, {
+                           align: "right",
+                           width: doc.page.width - 60
+                       });
+                }
+            });
 
             const range = doc.bufferedPageRange();
             for (let i = range.start; i < range.start + range.count; i++) {
+                if (i === 0) continue; // Skip Cover page
                 doc.switchToPage(i);
 
                 doc

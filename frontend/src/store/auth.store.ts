@@ -11,7 +11,13 @@ interface AuthState {
 
     hydrated: boolean;
 
+    sessionValidated: boolean;
+
     setHydrated: (
+        state: boolean
+    ) => void;
+
+    setSessionValidated: (
         state: boolean
     ) => void;
 
@@ -33,11 +39,20 @@ export const useAuthStore =
 
                 hydrated: false,
 
+                sessionValidated: false,
+
                 setHydrated: (
                     state
                 ) =>
                     set({
                         hydrated: state,
+                    }),
+
+                setSessionValidated: (
+                    state
+                ) =>
+                    set({
+                        sessionValidated: state,
                     }),
 
                 setAuth: (
@@ -47,16 +62,23 @@ export const useAuthStore =
                     set({
                         user,
                         token,
+                        sessionValidated: true,
                     }),
 
                 logout: () =>
                     set({
                         user: null,
                         token: null,
+                        sessionValidated: false,
                     }),
             }),
             {
                 name: "auth-storage",
+
+                partialize: (state) => ({
+                    user: state.user,
+                    token: state.token,
+                }),
 
                 onRehydrateStorage: () => {
                     return (state) => {

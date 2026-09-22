@@ -19,8 +19,8 @@ model User {
   reports         ResearchReport[]
 }
 
-model ResearchQuery {
-  content String @db.LongText
+model ResearchQuery  {
+  
   id          String   @id @default(uuid())
   query       String
   diseaseName String?

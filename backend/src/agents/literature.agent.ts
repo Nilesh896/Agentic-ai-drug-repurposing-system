@@ -1,10 +1,10 @@
 import { searchPubMedArticles } from "../services/pubmed.service";
+import { ParsedQuery } from "../utils/queryParser";
 
 export const literatureAgent = async (
-    query: string
+    query: string | ParsedQuery
 ) => {
-    const articles =
-        await searchPubMedArticles(query);
+    const articles = await searchPubMedArticles(query);
 
     return {
         source: "PubMed",

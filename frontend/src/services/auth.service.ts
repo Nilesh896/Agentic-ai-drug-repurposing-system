@@ -31,3 +31,18 @@ export const loginUser = async (
 
     return response.data;
 };
+
+export const validateSession = async (
+    token: string
+) => {
+    const response = await api.get(
+        "/protected",
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    return response.data;
+};

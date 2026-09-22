@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
 import { useAuthStore } from "@/store/auth.store";
+import { validateSession } from "@/services/auth.service";
 
 export default function ProtectedRoute({
     children,
@@ -13,24 +14,59 @@ export default function ProtectedRoute({
 }) {
     const router = useRouter();
 
-    const { token, hydrated } =
+    const { token, hydrated, sessionValidated, setSessionValidated, logout } =
         useAuthStore();
 
+    const [verifying, setVerifying] = useState(false);
+
     useEffect(() => {
-        if (
-            hydrated &&
-            !token
-        ) {
-            router.push("/login");
-        }
+        const verifySession = async () => {
+            if (hydrated) {
+                if (!token) {
+                    router.push("/login");
+                } else {
+                    if (sessionValidated) {
+                        return;
+                    }
+
+                    try {
+                        setVerifying(true);
+                        const response = await validateSession(token);
+                        if (response.success) {
+                            setSessionValidated(true);
+                        } else {
+                            logout();
+                            router.push("/login");
+                        }
+                    } catch (error) {
+                        logout();
+                        router.push("/login");
+                    } finally {
+                        setVerifying(false);
+                    }
+                }
+            }
+        };
+
+        verifySession();
     }, [
         token,
         hydrated,
+        sessionValidated,
         router,
+        logout,
+        setSessionValidated,
     ]);
 
-    if (!hydrated) {
-        return null;
+    if (!hydrated || verifying) {
+        return (
+            <div className="min-h-screen bg-black flex items-center justify-center text-zinc-400">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-4 border-zinc-700 border-t-indigo-500 rounded-full animate-spin"></div>
+                    <p className="text-sm font-medium">Verifying session...</p>
+                </div>
+            </div>
+        );
     }
 
     if (!token) {

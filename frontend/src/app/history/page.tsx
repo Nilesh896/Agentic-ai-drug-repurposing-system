@@ -1,22 +1,13 @@
 "use client";
 
-import {
-    useEffect,
-    useState,
-} from "react";
-
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import toast from "react-hot-toast";
 
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-
 import DashboardLayout from "@/components/layout/DashboardLayout";
-
 import { useAuthStore } from "@/store/auth.store";
-
 import { fetchReports } from "@/services/history.service";
-
 import { ResearchReport } from "@/types/history.types";
 
 const generatePreview = (text?: string) => {
@@ -30,8 +21,8 @@ const generatePreview = (text?: string) => {
         .replace(/\s+/g, " ") // Extra whitespace
         .trim();
 
-    if (clean.length > 200) {
-        clean = clean.substring(0, 200);
+    if (clean.length > 280) {
+        clean = clean.substring(0, 280);
         const lastSpace = clean.lastIndexOf(" ");
         if (lastSpace > 0) {
             clean = clean.substring(0, lastSpace);
@@ -44,38 +35,26 @@ const generatePreview = (text?: string) => {
 
 export default function HistoryPage() {
     const router = useRouter();
+    const { token } = useAuthStore();
 
-    const { token } =
-        useAuthStore();
-
-    const [reports, setReports] =
-        useState<
-            ResearchReport[]
-        >([]);
-
-    const [loading, setLoading] =
-        useState(true);
+    const [reports, setReports] = useState<ResearchReport[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const getReports =
-            async () => {
-                try {
-                    const response =
-                        await fetchReports(
-                            token as string
-                        );
-
-                    setReports(
-                        response.data
-                    );
-                } catch (error) {
-                    toast.error(
-                        "Failed to fetch reports"
-                    );
-                } finally {
-                    setLoading(false);
+        const getReports = async () => {
+            try {
+                const response = await fetchReports(token as string);
+                if (response.success) {
+                    setReports(response.data);
+                } else {
+                    toast.error(response.message || "Failed to fetch reports");
                 }
-            };
+            } catch (error) {
+                toast.error("Failed to fetch reports");
+            } finally {
+                setLoading(false);
+            }
+        };
 
         if (token) {
             getReports();
@@ -85,74 +64,70 @@ export default function HistoryPage() {
     return (
         <ProtectedRoute>
             <DashboardLayout>
-                <div>
-                    <h1 className="text-4xl font-bold text-white mb-8">
-                        Research History
-                    </h1>
+                <div className="space-y-8">
+                    {/* Header */}
+                    <div>
+                        <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
+                            Research History
+                        </h1>
+                        <p className="text-zinc-400 text-sm max-w-xl">
+                            Browse details of past research reports, view summaries, or download compiled documents.
+                        </p>
+                    </div>
 
                     {loading ? (
-                        <p className="text-zinc-400">
-                            Loading reports...
-                        </p>
-                    ) : reports.length ===
-                        0 ? (
-                        <p className="text-zinc-400">
-                            No reports found.
-                        </p>
+                        <div className="flex items-center gap-3 text-zinc-500 py-12">
+                            <div className="w-5 h-5 border-2 border-zinc-800 border-t-indigo-500 rounded-full animate-spin"></div>
+                            <span className="text-sm">Loading historical reports...</span>
+                        </div>
+                    ) : reports.length === 0 ? (
+                        <div className="bg-zinc-950 border border-zinc-900 rounded-xl p-12 text-center text-zinc-500 shadow-sm">
+                            No historical reports found. Go to the dashboard to generate your first analysis.
+                        </div>
                     ) : (
                         <div className="grid gap-6">
-                            {reports.map(
-                                (report) => (
-                                    <div
-                                        key={report.id}
-                                        className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 hover:border-zinc-600 transition"
-                                    >
-                                        <div className="flex justify-between items-start gap-6">
-                                            <div className="flex-1">
-                                                <h2 className="text-2xl font-bold text-white mb-2">
-                                                    {
-                                                        report.title
-                                                    }
-                                                </h2>
+                            {reports.map((report) => (
+                                <div
+                                    key={report.id}
+                                    className="bg-zinc-950 border border-zinc-900 rounded-xl p-6 hover:border-zinc-800 transition duration-200 shadow-sm flex flex-col sm:flex-row justify-between items-start gap-6"
+                                >
+                                    <div className="flex-1 space-y-2">
+                                        <h2 className="text-xl font-bold text-white tracking-tight">
+                                            {report.title}
+                                        </h2>
 
-                                                <p className="text-zinc-400 text-sm mb-4">
-                                                    {new Date(
-                                                        report.createdAt
-                                                    ).toLocaleString()}
-                                                </p>
+                                        <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">
+                                            {new Date(report.createdAt).toLocaleString()}
+                                        </p>
 
-                                                <p className="text-zinc-300 text-sm leading-relaxed mt-2">
-                                                    {generatePreview(
-                                                        report.summary || report.aiInsights || report.content
-                                                    )}
-                                                </p>
-                                            </div>
-
-                                            <div className="flex flex-col gap-3">
-                                                <button
-                                                    onClick={() =>
-                                                        router.push(
-                                                            `/history/${report.id}`
-                                                        )
-                                                    }
-                                                    className="bg-white text-black px-4 py-2 rounded-lg font-semibold"
-                                                >
-                                                    Open
-                                                </button>
-
-                                                <a
-                                                    href={`http://localhost:5000${report.pdfUrl}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="bg-zinc-700 text-white px-4 py-2 rounded-lg font-semibold text-center"
-                                                >
-                                                    PDF
-                                                </a>
-                                            </div>
-                                        </div>
+                                        <p className="text-zinc-400 text-sm leading-relaxed max-w-3xl">
+                                            {generatePreview(
+                                                report.summary || report.aiInsights || report.content
+                                            )}
+                                        </p>
                                     </div>
-                                )
-                            )}
+
+                                    <div className="flex sm:flex-col gap-3 w-full sm:w-auto">
+                                        <button
+                                            onClick={() => router.push(`/history/${report.id}`)}
+                                            className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-xs tracking-wide transition cursor-pointer text-center"
+                                        >
+                                            Open View
+                                        </button>
+
+                                        {report.pdfUrl && (
+                                            <a
+                                                href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}${report.pdfUrl}?token=${token}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex-1 sm:flex-none bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-4 py-2 rounded-lg font-semibold text-xs tracking-wide transition text-center"
+                                            >
+                                                PDF Report
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

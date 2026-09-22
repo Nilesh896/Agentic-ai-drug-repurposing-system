@@ -24,3 +24,26 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Custom premium blockquote styling for highlights in ReactMarkdown */
+.prose blockquote {
+  background-color: rgba(37, 99, 235, 0.08); /* light blue bg */
+  border-left: 4px solid #2563eb; /* vibrant blue left accent line */
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  font-style: italic;
+  color: #e4e4e7; /* zinc-200 */
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.prose blockquote p {
+  margin: 0 !important;
+}
+
+/* Responsive table styling to prevent layout overflow on mobile */
+.prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

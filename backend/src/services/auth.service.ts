@@ -13,6 +13,19 @@ import {
 export const registerUserService = async (
     data: RegisterUserInput
 ) => {
+    if (!data.name || data.name.trim() === "") {
+        throw new ApiError(400, "Name cannot be empty");
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!data.email || !emailRegex.test(data.email)) {
+        throw new ApiError(400, "Invalid email format");
+    }
+
+    if (!data.password || data.password.length < 8) {
+        throw new ApiError(400, "Password must be at least 8 characters long");
+    }
+
     const existingUser = await prisma.user.findUnique({
         where: {
             email: data.email,
@@ -33,7 +46,14 @@ export const registerUserService = async (
         },
     });
 
-    return user;
+    // Strip password hash from return payload to keep security clean
+    return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+    };
 };
 
 export const loginUserService = async (

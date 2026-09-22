@@ -1,10 +1,11 @@
+import { env } from "./config/env";
 import express from "express";
 import cors from "cors";
 import path from "path";
 
 import routes from "./routes";
-import { env } from "./config/env";
 import { errorMiddleware } from "./middleware/error.middleware";
+
 
 const app = express();
 

@@ -4,6 +4,7 @@ import {
     generateResearch,
     getSingleReport,
     getUserReports,
+    downloadReportPDF,
 } from "../controllers/research.controller";
 
 import { authenticateUser } from "../middleware/auth.middleware";
@@ -20,6 +21,11 @@ router.get(
     "/history",
     authenticateUser,
     getUserReports
+);
+
+router.get(
+    "/reports/:id/pdf",
+    downloadReportPDF
 );
 
 router.get(

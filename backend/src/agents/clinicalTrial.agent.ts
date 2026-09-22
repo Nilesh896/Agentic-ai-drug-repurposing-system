@@ -1,10 +1,10 @@
 import { searchClinicalTrials } from "../services/clinicalTrial.service";
+import { ParsedQuery } from "../utils/queryParser";
 
 export const clinicalTrialAgent = async (
-    query: string
+    query: string | ParsedQuery
 ) => {
-    const trials =
-        await searchClinicalTrials(query);
+    const trials = await searchClinicalTrials(query);
 
     return {
         source: "ClinicalTrials.gov",
